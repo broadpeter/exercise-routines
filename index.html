@@ -1,0 +1,629 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Routine App</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+
+<style>
+:root {
+  --bg: #f6f6f4;
+  --surface: #ffffff;
+  --border: #e8e8e5;
+  --text: #1c1c1a;
+  --text-muted: #8f8f8a;
+
+  --A: #AEE8B6;    /* lighter green */
+  --B: #BBDCFB;    /* lighter blue */
+  --D: #F0E9D2;    /* pale sand: daily-only session, deliberately quiet */
+  --done: #E3E3E0; /* light grey */
+  --empty: rgba(0,0,0,0.08);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  font-family: 'Inter', system-ui, sans-serif;
+  max-width: 480px;
+  margin: 0 auto;
+  padding: 32px 20px 48px;
+  background: var(--bg);
+  color: var(--text);
+  -webkit-font-smoothing: antialiased;
+}
+
+h1 {
+  font-size: 21px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  margin: 0 0 20px;
+}
+
+.import-link {
+  font-size: 14px;
+  color: var(--text-muted);
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.import-link:hover {
+  color: var(--text);
+}
+
+/* buttons that should look like the text links */
+button.import-link {
+  background: none;
+  border: none;
+  padding: 0;
+  font-family: inherit;
+}
+
+.import-link.block {
+  display: block;
+  margin: 14px 0;
+}
+
+/* page header: title and Add CSV share a baseline */
+.page-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  margin-bottom: 24px;
+}
+
+.page-header h1 {
+  margin: 0;
+}
+
+/* home sections: content plus its own link, clear space between sections */
+.section {
+  margin-bottom: 40px;
+}
+
+.section-link {
+  text-align: right;
+  margin-top: 12px;
+}
+
+.hero-card {
+  border-radius: 12px;
+  padding: 20px 18px;
+}
+
+.hero-title {
+  font-size: clamp(26px, 8vw, 34px);
+  font-weight: 600;
+  line-height: 1.15;
+  letter-spacing: -0.02em;
+  text-wrap: balance;
+  margin-bottom: 8px;
+}
+
+.hero-sub {
+  font-size: 14px;
+  color: var(--text-muted);
+  margin-bottom: 16px;
+}
+
+.hero-btn {
+  background: var(--text);
+  color: var(--surface);
+  border-radius: 6px;
+  padding: 12px 14px;
+  font-family: inherit;
+  font-size: 15px;
+  font-weight: 500;
+  text-align: center;
+  width: 100%;
+  border: none;
+  cursor: pointer;
+}
+
+.hero-btn:active {
+  opacity: 0.8;
+}
+
+#markDoneBtn {
+  margin-top: 16px;
+}
+
+.card {
+  padding: 16px 18px;
+  margin-bottom: 10px;
+  border-radius: 6px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  font-size: 15.5px;
+  line-height: 1.6;
+}
+
+.card-detail {
+  color: var(--text-muted);
+  font-size: 13px;
+  margin-top: 6px;
+}
+
+#backBtn,
+#backBtnRoutines,
+#backBtnHistory {
+  background: none;
+  border: none;
+  font-family: inherit;
+  font-size: 14.5px;
+  font-weight: 500;
+  color: var(--text-muted);
+  padding: 0 0 18px 0;
+  cursor: pointer;
+}
+
+#backBtn:hover,
+#backBtnRoutines:hover,
+#backBtnHistory:hover {
+  color: var(--text);
+}
+
+/* 7 equal columns across the full content width */
+.calendarRow {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+}
+
+.calendarHead {
+  text-align: center;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+/* each cell is a touch taller than wide: rows end up further apart than columns */
+.calendarCell {
+  aspect-ratio: 1 / 1.1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.calendarCircle {
+  width: 66%;
+  aspect-ratio: 1 / 1;
+  border-radius: 50%;
+  background: var(--empty);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.calendarCircle.A { background: var(--A); }
+.calendarCircle.B { background: var(--B); }
+.calendarCircle.D { background: var(--D); color: var(--text-muted); }
+.calendarCircle.today { box-shadow: 0 0 0 2px var(--text); }
+
+#monthlyCalendar + .section-link {
+  margin-top: 0;
+}
+
+/* routine pages take the colour of their routine */
+body.theme-A { background: var(--A); }
+body.theme-B { background: var(--B); }
+body.theme-D { background: var(--D); }
+body[class*="theme-"] { --text-muted: #5b5b56; }
+
+.page {
+  display: none;
+}
+
+#emptyState {
+  margin: 0 0 24px;
+  color: var(--text-muted);
+  font-size: 15px;
+  line-height: 1.5;
+}
+</style>
+</head>
+
+<body>
+
+<!-- HOME VIEW -->
+<div id="homeView">
+  <div class="page-header">
+    <h1>Routine</h1>
+    <label for="csvInput" class="import-link">Add CSV</label>
+    <input type="file" id="csvInput" accept=".csv" style="display:none">
+  </div>
+
+  <div id="emptyState" style="display:none;">
+    No data yet — import a CSV to get started.
+  </div>
+
+  <div class="section">
+    <div id="heroContainer"></div>
+    <div class="section-link">
+      <button class="import-link" onclick="openRoutinesPage()">View all routines</button>
+    </div>
+  </div>
+
+  <div class="section">
+    <div id="monthlyCalendar"></div>
+    <div class="section-link">
+      <button class="import-link" onclick="openHistoryPage()">History</button>
+    </div>
+  </div>
+</div>
+
+<!-- ROUTINE VIEW -->
+<div id="routineView" class="page">
+  <button id="backBtn">&larr; Back</button>
+  <h1 id="routineTitle"></h1>
+  <div id="cardList"></div>
+  <button id="markDoneBtn" class="hero-btn">Mark Routine as Done</button>
+</div>
+
+<!-- ALL ROUTINES PAGE -->
+<div id="routinesPage" class="page">
+  <button id="backBtnRoutines">&larr; Back</button>
+  <h1>All Routines</h1>
+  <button class="import-link block" onclick="startSpecificRoutine('daily')">Daily</button>
+  <button class="import-link block" onclick="startSpecificRoutine('A')">Routine A</button>
+  <button class="import-link block" onclick="startSpecificRoutine('B')">Routine B</button>
+</div>
+
+<!-- HISTORY PAGE -->
+<div id="historyPage" class="page">
+  <button id="backBtnHistory">&larr; Back</button>
+  <h1>History</h1>
+  <div id="history"></div>
+  <button id="downloadHistoryBtn" class="import-link" style="margin-top:10px;">Download History</button>
+</div>
+
+<script>
+// --- HELPERS ---
+function esc(s) {
+  return String(s).replace(/[&<>"']/g, c => ({
+    "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"
+  }[c]));
+}
+
+function getLocalDateString(date = new Date()) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+function getExercises() {
+  return JSON.parse(localStorage.getItem("exercises") || "[]");
+}
+
+function getHistory() {
+  return JSON.parse(localStorage.getItem("history") || "[]");
+}
+
+// "daily" is the routine name in the CSV; "D" is how it appears in history/calendar.
+// Also maps any older history entries that were saved as "daily".
+function routineSymbol(r) {
+  return r === "daily" ? "D" : r;
+}
+
+// --- CSV PARSER (handles quoted fields, commas inside quotes, CRLF, BOM) ---
+function parseCSVRows(text) {
+  const rows = [];
+  let row = [];
+  let field = "";
+  let inQuotes = false;
+
+  for (let i = 0; i < text.length; i++) {
+    const c = text[i];
+    if (inQuotes) {
+      if (c === '"') {
+        if (text[i + 1] === '"') { field += '"'; i++; }
+        else { inQuotes = false; }
+      } else {
+        field += c;
+      }
+    } else if (c === '"') {
+      inQuotes = true;
+    } else if (c === ",") {
+      row.push(field);
+      field = "";
+    } else if (c === "\n" || c === "\r") {
+      if (c === "\r" && text[i + 1] === "\n") i++;
+      row.push(field);
+      field = "";
+      rows.push(row);
+      row = [];
+    } else {
+      field += c;
+    }
+  }
+  row.push(field);
+  rows.push(row);
+  return rows;
+}
+
+function normaliseRoutine(r) {
+  const t = r.trim();
+  return t.toLowerCase() === "daily" ? "daily" : t.toUpperCase();
+}
+
+function parseCSV(text) {
+  const clean = text.replace(/^\uFEFF/, "");
+  return parseCSVRows(clean)
+    .slice(1) // header
+    .filter(cols => cols.length >= 2 && cols[0].trim() !== "")
+    .map(cols => ({
+      exercise: cols[0].trim(),
+      routine: normaliseRoutine(cols[1]),
+      // any unquoted commas in the details column get stitched back together
+      details: cols.slice(2).join(",").trim()
+    }));
+}
+
+// --- HASH FOR VERSIONING (covers the whole file, no btoa) ---
+function hashCSV(text) {
+  let h = 0;
+  for (let i = 0; i < text.length; i++) {
+    h = (h * 31 + text.charCodeAt(i)) | 0;
+  }
+  return String(h);
+}
+
+function updateVersionIfChanged(csvText) {
+  const newHash = hashCSV(csvText);
+  const oldHash = localStorage.getItem("csvHash");
+
+  if (newHash !== oldHash) {
+    let version = parseInt(localStorage.getItem("routineVersion") || "0", 10);
+    version += 1;
+    localStorage.setItem("routineVersion", version);
+    localStorage.setItem("csvHash", newHash);
+  }
+}
+
+// --- LOAD CSV ---
+document.getElementById("csvInput").addEventListener("change", function(e) {
+  const input = e.target;
+  const file = input.files[0];
+  if (!file) return;
+
+  const reader = new FileReader();
+  reader.onload = function(event) {
+    const csvText = event.target.result;
+    const exercises = parseCSV(csvText);
+
+    if (exercises.length === 0) {
+      alert("No exercises found in that CSV. Expected columns: exercise, routine, details.");
+    } else {
+      updateVersionIfChanged(csvText);
+      localStorage.setItem("exercises", JSON.stringify(exercises));
+      renderHome();
+    }
+
+    input.value = ""; // lets you re-import the same file
+  };
+  reader.readAsText(file);
+});
+
+// --- DETERMINE NEXT ROUTINE ---
+function getNextRoutine() {
+  const last = localStorage.getItem("lastRoutine");
+  return last === "A" ? "B" : "A";
+}
+
+// --- CHECK IF DONE TODAY (a daily-only session doesn't count) ---
+function hasDoneToday() {
+  const today = getLocalDateString();
+  return getHistory().some(h => h.date === today && routineSymbol(h.routine) !== "D");
+}
+
+// --- HERO CARD ---
+function renderHero() {
+  const hero = document.getElementById("heroContainer");
+  const exercises = getExercises();
+
+  if (exercises.length === 0) {
+    hero.innerHTML = "";
+    return;
+  }
+
+  if (hasDoneToday()) {
+    hero.innerHTML = `
+      <div class="hero-card" style="background: var(--done);">
+        <div class="hero-title">Done for today</div>
+        <div class="hero-sub">Come back tomorrow for your next routine.</div>
+      </div>
+    `;
+  } else {
+    const routine = getNextRoutine();
+    const bg = routine === "A" ? "var(--A)" : "var(--B)";
+    hero.innerHTML = `
+      <div class="hero-card" style="background:${bg};">
+        <div class="hero-title">Today’s Routine: ${routine}</div>
+        <div class="hero-sub">Your next set of exercises is ready.</div>
+        <button class="hero-btn" onclick="startRoutine()">Start Routine</button>
+      </div>
+    `;
+  }
+}
+
+// --- CALENDAR ---
+function renderMonthlyCalendar() {
+  const history = getHistory();
+  const container = document.getElementById("monthlyCalendar");
+
+  const today = new Date();
+  const todayStr = getLocalDateString(today);
+  const startDate = new Date(today);
+  const daysSinceMonday = (today.getDay() + 6) % 7;
+  startDate.setDate(today.getDate() - daysSinceMonday - 21);
+
+  const weekdays = ["M", "T", "W", "T", "F", "S", "S"];
+  let rows = `<div class="calendarRow">${
+    weekdays.map(d => `<div class="calendarHead">${d}</div>`).join("")
+  }</div>`;
+
+  for (let week = 0; week < 4; week++) {
+    let row = "<div class='calendarRow'>";
+
+    for (let i = 0; i < 7; i++) {
+      const date = new Date(startDate);
+      date.setDate(startDate.getDate() + week * 7 + i);
+      const dateStr = getLocalDateString(date);
+
+      // if a day has both, show the full routine rather than the daily-only session
+      const dayEntries = history.filter(h => h.date === dateStr);
+      const entry = dayEntries.find(h => routineSymbol(h.routine) !== "D") || dayEntries[0];
+      const symbol = entry ? routineSymbol(entry.routine) : "";
+      const cls = [symbol, dateStr === todayStr ? "today" : ""].filter(Boolean).join(" ");
+
+      row += `<div class="calendarCell"><div class="calendarCircle ${esc(cls)}" title="${dateStr}">${esc(symbol)}</div></div>`;
+    }
+
+    row += "</div>";
+    rows += row;
+  }
+
+  container.innerHTML = `
+    <h3 style="margin:0 0 6px;">
+      Last 4 weeks
+    </h3>
+    ${rows}
+  `;
+}
+
+// --- HOME PAGE ---
+function renderHome() {
+  document.getElementById("emptyState").style.display =
+    getExercises().length === 0 ? "block" : "none";
+
+  renderHero();
+  renderMonthlyCalendar();
+
+  showPage("homeView");
+}
+
+// --- PAGE NAVIGATION ---
+function showPage(id) {
+  document.getElementById("homeView").style.display = "none";
+  document.getElementById("routineView").style.display = "none";
+  document.getElementById("routinesPage").style.display = "none";
+  document.getElementById("historyPage").style.display = "none";
+
+  document.getElementById(id).style.display = "block";
+  document.body.className = id === "routineView" ? "theme-" + routineSymbol(activeRoutine) : "";
+}
+
+function openRoutinesPage() {
+  showPage("routinesPage");
+}
+
+function openHistoryPage() {
+  renderHistory();
+  showPage("historyPage");
+}
+
+// --- ROUTINE PAGE ---
+let activeRoutine = null;
+let activeExercises = [];
+
+function startRoutine() {
+  startSpecificRoutine(getNextRoutine());
+}
+
+function startSpecificRoutine(routine) {
+  activeRoutine = routine;
+  const exercises = getExercises();
+  const daily = exercises.filter(e => e.routine === "daily");
+
+  // Daily exercises are part of both A and B; "daily" on its own is the short version
+  activeExercises = routine === "daily"
+    ? daily
+    : [...daily, ...exercises.filter(e => e.routine === routine)];
+
+  document.getElementById("routineTitle").innerText =
+    routine === "daily" ? "Daily Exercises" : `Routine ${routine}`;
+
+  document.getElementById("cardList").innerHTML = activeExercises.map(e => `
+    <div class="card">
+      <strong>${esc(e.exercise)}</strong>
+      <div class="card-detail">${esc(e.details)}</div>
+    </div>
+  `).join("");
+
+  showPage("routineView");
+}
+
+// --- MARK ROUTINE AS DONE ---
+document.getElementById("markDoneBtn").addEventListener("click", function() {
+  if (!activeRoutine) return;
+
+  const version = localStorage.getItem("routineVersion") || 1;
+  const symbol = routineSymbol(activeRoutine);
+
+  // only A/B move the rotation; a daily-only session leaves "next" unchanged
+  if (symbol === "A" || symbol === "B") {
+    localStorage.setItem("lastRoutine", symbol);
+  }
+
+  const history = getHistory();
+  history.push({
+    date: getLocalDateString(),
+    routine: symbol,
+    version: version,
+    exercises: activeExercises.map(e => e.exercise)
+  });
+
+  localStorage.setItem("history", JSON.stringify(history));
+
+  renderHome();
+});
+
+// --- BACK BUTTONS ---
+document.getElementById("backBtn").addEventListener("click", renderHome);
+document.getElementById("backBtnRoutines").addEventListener("click", renderHome);
+document.getElementById("backBtnHistory").addEventListener("click", renderHome);
+
+// --- HISTORY PAGE ---
+function renderHistory() {
+  const container = document.getElementById("history");
+
+  container.innerHTML = getHistory()
+    .map(h => {
+      const symbol = routineSymbol(h.routine);
+      const label = symbol === "D" ? "Daily only" : `Routine ${symbol}`;
+      return `<div>${esc(h.date)}: ${esc(label)} — ${esc(h.exercises.join(", "))}</div>`;
+    })
+    .join("");
+}
+
+document.getElementById("downloadHistoryBtn").addEventListener("click", function() {
+  const csvRows = ["date,routine,version,exercises"];
+
+  getHistory().forEach(entry => {
+    const exercises = entry.exercises.join("|").replace(/"/g, '""');
+    csvRows.push(`${entry.date},${routineSymbol(entry.routine)},${entry.version},"${exercises}"`);
+  });
+
+  const blob = new Blob([csvRows.join("\n")], { type: "text/csv" });
+  const url = URL.createObjectURL(blob);
+
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = "routine_history.csv";
+  a.click();
+
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+});
+
+// --- INITIAL LOAD ---
+renderHome();
+</script>
+
+</body>
+</html>
