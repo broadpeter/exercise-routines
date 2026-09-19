@@ -10,6 +10,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 
 <style>
 :root {
@@ -294,6 +295,46 @@ body[class*="theme-"] { --text-muted: #5b5b56; }
   font-size: 15px;
   line-height: 1.5;
 }
+
+.sync-panel {
+  margin: -10px 0 24px;
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+}
+
+.sync-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.sync-input {
+  flex: 1;
+  min-width: 0;
+  padding: 8px 9px;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  font: inherit;
+  font-size: 13px;
+}
+
+.sync-button {
+  width: auto;
+  padding: 0;
+  border: 0;
+  color: var(--text-muted);
+  font-size: 13px;
+  white-space: nowrap;
+}
+
+.sync-status {
+  margin-top: 7px;
+  color: var(--text-muted);
+  font-size: 12px;
+  line-height: 1.4;
+}
 </style>
 </head>
 
@@ -311,6 +352,19 @@ body[class*="theme-"] { --text-muted: #5b5b56; }
       </svg>
     </label>
     <input type="file" id="csvInput" accept=".csv" style="display:none">
+  </div>
+
+  <div class="sync-panel">
+    <div class="sync-row" id="signedOutSync">
+      <input id="authEmail" class="sync-input" type="email" placeholder="Email for sync" autocomplete="email">
+      <button id="signInBtn" class="import-link sync-button" type="button">Sign in</button>
+    </div>
+    <div class="sync-row" id="signedInSync" style="display:none;">
+      <span id="signedInEmail" class="sync-status" style="margin:0; flex:1;"></span>
+      <button id="syncNowBtn" class="import-link sync-button" type="button">Sync</button>
+      <button id="signOutBtn" class="import-link sync-button" type="button">Sign out</button>
+    </div>
+    <div id="syncStatus" class="sync-status">Local-only mode</div>
   </div>
 
   <div id="emptyState" style="display:none;">
@@ -358,6 +412,15 @@ body[class*="theme-"] { --text-muted: #5b5b56; }
 </div>
 
 <script>
+// Paste these values from Supabase Dashboard -> Project Settings -> API.
+const SUPABASE_URL = "YOUR_SUPABASE_PROJECT_URL";
+const SUPABASE_ANON_KEY = "YOUR_SUPABASE_PUBLISHABLE_OR_ANON_KEY";
+const supabaseConfigured = !SUPABASE_URL.startsWith("YOUR_") && !SUPABASE_ANON_KEY.startsWith("YOUR_");
+const supabaseClient = supabaseConfigured
+  ? window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY)
+  : null;
+let currentUser = null;
+
 // --- HELPERS ---
 function esc(s) {
   return String(s).replace(/[&<>"']/g, c => ({
@@ -378,6 +441,135 @@ function getExercises() {
 
 function getHistory() {
   return JSON.parse(localStorage.getItem("history") || "[]");
+}
+
+function setSyncStatus(message) {
+  document.getElementById("syncStatus").textContent = message;
+}
+
+function setSignedIn(user) {
+  currentUser = user;
+  document.getElementById("signedOutSync").style.display = user ? "none" : "flex";
+  document.getElementById("signedInSync").style.display = user ? "flex" : "none";
+  document.getElementById("signedInEmail").textContent = user ? user.email : "";
+}
+
+function ensureHistoryIds(history) {
+  let changed = false;
+  const withIds = history.map(entry => {
+    if (entry.id) return entry;
+    changed = true;
+    return { ...entry, id: crypto.randomUUID() };
+  });
+  if (changed) localStorage.setItem("history", JSON.stringify(withIds));
+  return withIds;
+}
+
+async function syncFromSupabase() {
+  if (!supabaseClient) return;
+  setSyncStatus("Syncing...");
+
+  const [{ data: cloudExercises, error: exercisesError }, { data: cloudSessions, error: sessionsError }] = await Promise.all([
+    supabaseClient.from("exercises").select("position, exercise, routine, details, version, csv_hash").order("position"),
+    supabaseClient.from("sessions").select("id, date, routine, version, exercises, created_at").order("created_at")
+  ]);
+  if (exercisesError) throw exercisesError;
+  if (sessionsError) throw sessionsError;
+
+  const localExercises = getExercises();
+  if (cloudExercises.length > 0) {
+    localStorage.setItem("exercises", JSON.stringify(cloudExercises.map(row => ({
+      exercise: row.exercise,
+      routine: row.routine,
+      details: row.details || ""
+    }))));
+  } else if (localExercises.length > 0) {
+    await uploadExercises(localExercises);
+  }
+
+  const localHistory = ensureHistoryIds(getHistory());
+  if (cloudSessions.length > 0) {
+    localStorage.setItem("history", JSON.stringify(cloudSessions.map(row => ({
+      id: row.id,
+      date: row.date,
+      routine: row.routine,
+      version: row.version,
+      exercises: row.exercises || []
+    }))));
+  } else if (localHistory.length > 0) {
+    await uploadHistory(localHistory);
+  }
+
+  renderHome();
+  setSyncStatus("Synced");
+}
+
+async function uploadExercises(exercises) {
+  const version = parseInt(localStorage.getItem("routineVersion") || "1", 10);
+  const hash = localStorage.getItem("csvHash");
+  const { error } = await supabaseClient.rpc("replace_exercises", {
+    p_rows: exercises,
+    p_imported_at: new Date().toISOString(),
+    p_version: version,
+    p_hash: hash
+  });
+  if (error) throw error;
+}
+
+async function uploadHistory(history) {
+  const rows = history.map(entry => ({
+    id: entry.id,
+    date: entry.date,
+    routine: routineSymbol(entry.routine),
+    version: entry.version ? Number(entry.version) : null,
+    exercises: entry.exercises || []
+  }));
+  const { error } = await supabaseClient.from("sessions").upsert(rows, { onConflict: "id" });
+  if (error) throw error;
+}
+
+async function pushLocalData() {
+  if (!supabaseClient || !currentUser) return;
+  setSyncStatus("Saving...");
+  const exercises = getExercises();
+  const history = ensureHistoryIds(getHistory());
+
+  if (exercises.length > 0) await uploadExercises(exercises);
+  if (history.length > 0) await uploadHistory(history);
+  setSyncStatus("Synced");
+}
+
+async function syncNow(deletedSessionIds = []) {
+  try {
+    if (deletedSessionIds.length > 0) {
+      const { error } = await supabaseClient
+        .from("sessions")
+        .delete()
+        .in("id", deletedSessionIds);
+      if (error) throw error;
+    }
+    await pushLocalData();
+    await syncFromSupabase();
+  } catch (error) {
+    console.error("Supabase sync failed:", error);
+    setSyncStatus("Sync failed: " + (error.message || "check your Supabase setup"));
+  }
+}
+
+async function initSupabase() {
+  if (!supabaseConfigured) {
+    setSyncStatus("Local-only mode: add Supabase credentials in index.html");
+    return;
+  }
+
+  const { data: { session } } = await supabaseClient.auth.getSession();
+  setSignedIn(session?.user || null);
+  if (session?.user) await syncNow();
+
+  supabaseClient.auth.onAuthStateChange((_event, nextSession) => {
+    setSignedIn(nextSession?.user || null);
+    if (nextSession?.user) setTimeout(syncNow, 0);
+  });
 }
 
 // "daily" is the routine name in the CSV; "D" is how it appears in history/calendar.
@@ -478,6 +670,7 @@ document.getElementById("csvInput").addEventListener("change", function(e) {
       updateVersionIfChanged(csvText);
       localStorage.setItem("exercises", JSON.stringify(exercises));
       renderHome();
+      if (currentUser) syncNow();
     }
 
     input.value = ""; // lets you re-import the same file
@@ -661,8 +854,8 @@ document.getElementById("markDoneBtn").addEventListener("click", function() {
   if (!activeRoutine) return;
 
   if (activeCompletionIndex !== -1) {
-    const history = getHistory();
-    history.splice(activeCompletionIndex, 1);
+    const history = ensureHistoryIds(getHistory());
+    const removedEntry = history.splice(activeCompletionIndex, 1)[0];
     localStorage.setItem("history", JSON.stringify(history));
 
     const previousRoutine = history.findLast(entry => {
@@ -678,6 +871,7 @@ document.getElementById("markDoneBtn").addEventListener("click", function() {
 
     activeCompletionIndex = -1;
     renderHome();
+    if (currentUser) syncNow(removedEntry?.id ? [removedEntry.id] : []);
     return;
   }
 
@@ -700,6 +894,7 @@ document.getElementById("markDoneBtn").addEventListener("click", function() {
   localStorage.setItem("history", JSON.stringify(history));
 
   renderHome();
+  if (currentUser) syncNow();
 });
 
 // --- BACK BUTTONS ---
@@ -745,8 +940,34 @@ document.getElementById("downloadHistoryBtn").addEventListener("click", function
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 });
 
+document.getElementById("signInBtn").addEventListener("click", async function() {
+  if (!supabaseClient) {
+    setSyncStatus("Add Supabase credentials in index.html first");
+    return;
+  }
+
+  const email = document.getElementById("authEmail").value.trim();
+  if (!email) {
+    setSyncStatus("Enter your email address");
+    return;
+  }
+
+  const { error } = await supabaseClient.auth.signInWithOtp({
+    email,
+    options: { emailRedirectTo: window.location.origin + window.location.pathname }
+  });
+  setSyncStatus(error ? error.message : "Check your email for the sign-in link");
+});
+
+document.getElementById("syncNowBtn").addEventListener("click", syncNow);
+document.getElementById("signOutBtn").addEventListener("click", async function() {
+  const { error } = await supabaseClient.auth.signOut();
+  setSyncStatus(error ? error.message : "Signed out; local data remains on this device");
+});
+
 // --- INITIAL LOAD ---
 renderHome();
+initSupabase();
 
 if ("serviceWorker" in navigator) {
   window.addEventListener("load", function() {
