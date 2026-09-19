@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Routine App</title>
+  <title>Exercise Routines</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
@@ -78,6 +78,7 @@ button.import-link {
 
 .page-header h1 {
   margin: 0;
+  font-weight: 500;
 }
 
 /* home sections: content plus its own link, clear space between sections */
@@ -104,6 +105,29 @@ button.import-link {
   margin-bottom: 8px;
 }
 
+.hero-eyebrow {
+  color: var(--text-muted);
+  font-size: 14px;
+  font-weight: 500;
+  margin-bottom: 7px;
+}
+
+.hero-title.active {
+  margin-bottom: 16px;
+}
+
+.hero-title.completed {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  margin-botdtom: 20px;
+}
+
+.hero-check {
+  font-size: 0.8em;
+  line-height: 1;
+}
+
 .hero-sub {
   font-size: 14px;
   color: var(--text-muted);
@@ -128,6 +152,12 @@ button.import-link {
   opacity: 0.8;
 }
 
+.hero-btn.outline {
+  background: transparent;
+  color: var(--text-muted);
+  border: 1px solid var(--text-muted);
+}
+
 #markDoneBtn {
   margin-top: 16px;
 }
@@ -136,7 +166,7 @@ button.import-link {
   padding: 16px 18px;
   margin-bottom: 10px;
   border-radius: 6px;
-  background: var(--surface);
+  background: rgba(255, 255, 255, 0.5);
   border: 1px solid var(--border);
   font-size: 15.5px;
   line-height: 1.6;
@@ -188,7 +218,7 @@ button.import-link {
 }
 
 .calendarCircle {
-  width: 66%;
+  width: 70%;
   aspect-ratio: 1 / 1;
   border-radius: 50%;
   background: var(--empty);
@@ -207,6 +237,10 @@ button.import-link {
 
 #monthlyCalendar + .section-link {
   margin-top: 0;
+}
+
+#monthlyCalendar h3 {
+  font-weight: 500;
 }
 
 /* routine pages take the colour of their routine */
@@ -233,7 +267,7 @@ body[class*="theme-"] { --text-muted: #5b5b56; }
 <!-- HOME VIEW -->
 <div id="homeView">
   <div class="page-header">
-    <h1>Routine</h1>
+    <h1>Exercise Routines</h1>
     <label for="csvInput" class="import-link">Add CSV</label>
     <input type="file" id="csvInput" accept=".csv" style="display:none">
   </div>
@@ -269,9 +303,9 @@ body[class*="theme-"] { --text-muted: #5b5b56; }
 <div id="routinesPage" class="page">
   <button id="backBtnRoutines">&larr; Back</button>
   <h1>All Routines</h1>
-  <button class="import-link block" onclick="startSpecificRoutine('daily')">Daily</button>
-  <button class="import-link block" onclick="startSpecificRoutine('A')">Routine A</button>
-  <button class="import-link block" onclick="startSpecificRoutine('B')">Routine B</button>
+  <button class="import-link block" onclick="startSpecificRoutine('daily', 'routinesPage')">Daily</button>
+  <button class="import-link block" onclick="startSpecificRoutine('A', 'routinesPage')">Routine A</button>
+  <button class="import-link block" onclick="startSpecificRoutine('B', 'routinesPage')">Routine B</button>
 </div>
 
 <!-- HISTORY PAGE -->
@@ -422,6 +456,13 @@ function hasDoneToday() {
   return getHistory().some(h => h.date === today && routineSymbol(h.routine) !== "D");
 }
 
+function getTodayRoutineIndex() {
+  const today = getLocalDateString();
+  return getHistory().findLastIndex(
+    h => h.date === today && routineSymbol(h.routine) !== "D"
+  );
+}
+
 // --- HERO CARD ---
 function renderHero() {
   const hero = document.getElementById("heroContainer");
@@ -435,8 +476,8 @@ function renderHero() {
   if (hasDoneToday()) {
     hero.innerHTML = `
       <div class="hero-card" style="background: var(--done);">
-        <div class="hero-title">Done for today</div>
-        <div class="hero-sub">Come back tomorrow for your next routine.</div>
+        <div class="hero-title completed">Done for today <span class="hero-check" aria-hidden="true">✓</span></div>
+        <button class="hero-btn outline" onclick="reopenTodayRoutine()">View Today’s Routine</button>
       </div>
     `;
   } else {
@@ -444,8 +485,8 @@ function renderHero() {
     const bg = routine === "A" ? "var(--A)" : "var(--B)";
     hero.innerHTML = `
       <div class="hero-card" style="background:${bg};">
-        <div class="hero-title">Today’s Routine: ${routine}</div>
-        <div class="hero-sub">Your next set of exercises is ready.</div>
+        <div class="hero-eyebrow">Today</div>
+        <div class="hero-title active">Routine ${routine}</div>
         <button class="hero-btn" onclick="startRoutine()">Start Routine</button>
       </div>
     `;
@@ -490,7 +531,7 @@ function renderMonthlyCalendar() {
   }
 
   container.innerHTML = `
-    <h3 style="margin:0 0 6px;">
+    <h3 style="margin:0 0 10px;">
       Last 4 weeks
     </h3>
     ${rows}
@@ -531,13 +572,25 @@ function openHistoryPage() {
 // --- ROUTINE PAGE ---
 let activeRoutine = null;
 let activeExercises = [];
+let activeCompletionIndex = -1;
+let routineBackTarget = "homeView";
 
 function startRoutine() {
-  startSpecificRoutine(getNextRoutine());
+  startSpecificRoutine(getNextRoutine(), "homeView");
 }
 
-function startSpecificRoutine(routine) {
+function reopenTodayRoutine() {
+  const history = getHistory();
+  const completionIndex = getTodayRoutineIndex();
+  if (completionIndex === -1) return;
+
+  startSpecificRoutine(routineSymbol(history[completionIndex].routine), "homeView", completionIndex);
+}
+
+function startSpecificRoutine(routine, backTarget = "homeView", completionIndex = -1) {
   activeRoutine = routine;
+  activeCompletionIndex = completionIndex;
+  routineBackTarget = backTarget;
   const exercises = getExercises();
   const daily = exercises.filter(e => e.routine === "daily");
 
@@ -556,12 +609,36 @@ function startSpecificRoutine(routine) {
     </div>
   `).join("");
 
+  document.getElementById("markDoneBtn").innerText =
+    activeCompletionIndex === -1 ? "Mark Routine as Done" : "Mark Routine as Undone";
+
   showPage("routineView");
 }
 
 // --- MARK ROUTINE AS DONE ---
 document.getElementById("markDoneBtn").addEventListener("click", function() {
   if (!activeRoutine) return;
+
+  if (activeCompletionIndex !== -1) {
+    const history = getHistory();
+    history.splice(activeCompletionIndex, 1);
+    localStorage.setItem("history", JSON.stringify(history));
+
+    const previousRoutine = history.findLast(entry => {
+      const symbol = routineSymbol(entry.routine);
+      return symbol === "A" || symbol === "B";
+    });
+
+    if (previousRoutine) {
+      localStorage.setItem("lastRoutine", routineSymbol(previousRoutine.routine));
+    } else {
+      localStorage.removeItem("lastRoutine");
+    }
+
+    activeCompletionIndex = -1;
+    renderHome();
+    return;
+  }
 
   const version = localStorage.getItem("routineVersion") || 1;
   const symbol = routineSymbol(activeRoutine);
@@ -585,7 +662,13 @@ document.getElementById("markDoneBtn").addEventListener("click", function() {
 });
 
 // --- BACK BUTTONS ---
-document.getElementById("backBtn").addEventListener("click", renderHome);
+document.getElementById("backBtn").addEventListener("click", function() {
+  if (routineBackTarget === "routinesPage") {
+    showPage("routinesPage");
+  } else {
+    renderHome();
+  }
+});
 document.getElementById("backBtnRoutines").addEventListener("click", renderHome);
 document.getElementById("backBtnHistory").addEventListener("click", renderHome);
 
