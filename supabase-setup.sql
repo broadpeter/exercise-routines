@@ -30,6 +30,19 @@ create table if not exists public.exercises (
 );
 create index if not exists exercises_user_pos_idx on public.exercises (user_id, position);
 
+-- Remove any exact duplicates created before uniqueness was enforced, keeping
+-- one deterministic row for each user's exercise/routine/details combination.
+delete from public.exercises older
+using public.exercises newer
+where older.user_id = newer.user_id
+  and older.exercise = newer.exercise
+  and older.routine = newer.routine
+  and older.details = newer.details
+  and older.id > newer.id;
+
+create unique index if not exists exercises_user_content_unique_idx
+  on public.exercises (user_id, exercise, routine, details);
+
 -- ---------- row-level security: you only ever see and change your own rows ----------
 
 alter table public.sessions  enable row level security;

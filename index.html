@@ -335,6 +335,129 @@ body[class*="theme-"] { --text-muted: #5b5b56; }
   font-size: 12px;
   line-height: 1.4;
 }
+
+.history-summary {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+  margin: -4px 0 28px;
+}
+
+.history-stat {
+  padding: 12px 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  text-align: center;
+}
+
+.history-stat-value {
+  display: block;
+  font-size: 20px;
+  font-weight: 600;
+  line-height: 1.2;
+}
+
+.history-stat-label {
+  display: block;
+  margin-top: 4px;
+  color: var(--text-muted);
+  font-size: 11px;
+}
+
+.history-empty {
+  padding: 18px 0 24px;
+  color: var(--text-muted);
+  font-size: 14px;
+}
+
+.history-day {
+  margin-bottom: 28px;
+}
+
+.history-day-header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 9px;
+}
+
+.history-day-date {
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.history-day-count {
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.history-entry {
+  margin-bottom: 8px;
+  padding: 13px 14px 14px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+}
+
+.history-entry:last-child {
+  margin-bottom: 0;
+}
+
+.history-entry-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.history-badge {
+  display: inline-flex;
+  align-items: center;
+  min-height: 24px;
+  padding: 3px 8px;
+  border-radius: 5px;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.history-badge.A { background: var(--A); color: var(--A-dark); }
+.history-badge.B { background: var(--B); color: var(--B-dark); }
+.history-badge.D { background: var(--D); color: var(--text-muted); }
+
+.history-entry-meta {
+  color: var(--text-muted);
+  font-size: 11px;
+}
+
+.history-exercises {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px 7px;
+  margin: 11px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.history-exercises li {
+  padding: 4px 7px;
+  border-radius: 4px;
+  background: var(--bg);
+  font-size: 12px;
+  line-height: 1.25;
+}
+
+@media (max-width: 360px) {
+  .history-summary {
+    gap: 5px;
+  }
+
+  .history-stat {
+    padding-left: 6px;
+    padding-right: 6px;
+  }
+}
 </style>
 </head>
 
@@ -443,6 +566,20 @@ function getHistory() {
   return JSON.parse(localStorage.getItem("history") || "[]");
 }
 
+function normaliseExercises(exercises) {
+  const seen = new Set();
+  return exercises.filter(exercise => {
+    const key = JSON.stringify([
+      exercise.exercise,
+      exercise.routine,
+      exercise.details || ""
+    ]);
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
 function setSyncStatus(message) {
   document.getElementById("syncStatus").textContent = message;
 }
@@ -452,6 +589,7 @@ function setSignedIn(user) {
   document.getElementById("signedOutSync").style.display = user ? "none" : "flex";
   document.getElementById("signedInSync").style.display = user ? "flex" : "none";
   document.getElementById("signedInEmail").textContent = user ? user.email : "";
+  if (user) setSyncStatus("Signed in");
 }
 
 function ensureHistoryIds(history) {
@@ -476,13 +614,17 @@ async function syncFromSupabase() {
   if (exercisesError) throw exercisesError;
   if (sessionsError) throw sessionsError;
 
-  const localExercises = getExercises();
+  const localExercises = normaliseExercises(getExercises());
   if (cloudExercises.length > 0) {
-    localStorage.setItem("exercises", JSON.stringify(cloudExercises.map(row => ({
+    const cleanedExercises = normaliseExercises(cloudExercises.map(row => ({
       exercise: row.exercise,
       routine: row.routine,
       details: row.details || ""
-    }))));
+    })));
+    localStorage.setItem("exercises", JSON.stringify(cleanedExercises));
+    if (cleanedExercises.length !== cloudExercises.length) {
+      await uploadExercises(cleanedExercises);
+    }
   } else if (localExercises.length > 0) {
     await uploadExercises(localExercises);
   }
@@ -505,6 +647,8 @@ async function syncFromSupabase() {
 }
 
 async function uploadExercises(exercises) {
+  exercises = normaliseExercises(exercises);
+  localStorage.setItem("exercises", JSON.stringify(exercises));
   const version = parseInt(localStorage.getItem("routineVersion") || "1", 10);
   const hash = localStorage.getItem("csvHash");
   const { error } = await supabaseClient.rpc("replace_exercises", {
@@ -531,7 +675,7 @@ async function uploadHistory(history) {
 async function pushLocalData() {
   if (!supabaseClient || !currentUser) return;
   setSyncStatus("Saving...");
-  const exercises = getExercises();
+  const exercises = normaliseExercises(getExercises());
   const history = ensureHistoryIds(getHistory());
 
   if (exercises.length > 0) await uploadExercises(exercises);
@@ -564,6 +708,7 @@ async function initSupabase() {
 
   const { data: { session } } = await supabaseClient.auth.getSession();
   setSignedIn(session?.user || null);
+  if (!session?.user) setSyncStatus("Ready to sign in and sync");
   if (session?.user) await syncNow();
 
   supabaseClient.auth.onAuthStateChange((_event, nextSession) => {
@@ -911,14 +1056,76 @@ document.getElementById("backBtnHistory").addEventListener("click", renderHome);
 // --- HISTORY PAGE ---
 function renderHistory() {
   const container = document.getElementById("history");
+  const history = getHistory();
 
-  container.innerHTML = getHistory()
-    .map(h => {
-      const symbol = routineSymbol(h.routine);
-      const label = symbol === "D" ? "Daily only" : `Routine ${symbol}`;
-      return `<div>${esc(h.date)}: ${esc(label)} — ${esc(h.exercises.join(", "))}</div>`;
-    })
-    .join("");
+  if (history.length === 0) {
+    container.innerHTML = `<div class="history-empty">No completed routines yet.</div>`;
+    return;
+  }
+
+  const dates = [...new Set(history.map(entry => entry.date))].sort().reverse();
+  const formatDate = dateString => {
+    const date = new Date(`${dateString}T00:00:00`);
+    const today = new Date();
+    const yesterday = new Date(today);
+    yesterday.setDate(today.getDate() - 1);
+    const todayString = getLocalDateString(today);
+    const yesterdayString = getLocalDateString(yesterday);
+    const formatted = date.toLocaleDateString(undefined, {
+      weekday: "long",
+      month: "long",
+      day: "numeric",
+      year: "numeric"
+    });
+
+    if (dateString === todayString) return `Today, ${formatted.split(", ").slice(1).join(", ")}`;
+    if (dateString === yesterdayString) return `Yesterday, ${formatted.split(", ").slice(1).join(", ")}`;
+    return formatted;
+  };
+
+  const sessionCount = history.length;
+  const routineDays = new Set(history.filter(entry => routineSymbol(entry.routine) !== "D").map(entry => entry.date)).size;
+  const lastDate = dates[0];
+  const groupedHistory = dates.map(date => {
+    const entries = history.filter(entry => entry.date === date).reverse();
+    const entryMarkup = entries.map(entry => {
+      const symbol = routineSymbol(entry.routine);
+      const label = symbol === "D" ? "Daily exercises" : `Routine ${symbol}`;
+      const exercises = Array.isArray(entry.exercises) ? entry.exercises : [];
+      const exerciseMarkup = exercises.length
+        ? exercises.map(exercise => `<li>${esc(exercise)}</li>`).join("")
+        : `<li>No exercise list recorded</li>`;
+
+      return `
+        <article class="history-entry">
+          <div class="history-entry-top">
+            <span class="history-badge ${esc(symbol)}">${esc(label)}</span>
+            <span class="history-entry-meta">${exercises.length} exercise${exercises.length === 1 ? "" : "s"}</span>
+          </div>
+          <ul class="history-exercises">${exerciseMarkup}</ul>
+        </article>
+      `;
+    }).join("");
+
+    return `
+      <section class="history-day">
+        <div class="history-day-header">
+          <div class="history-day-date">${esc(formatDate(date))}</div>
+          <div class="history-day-count">${entries.length} session${entries.length === 1 ? "" : "s"}</div>
+        </div>
+        ${entryMarkup}
+      </section>
+    `;
+  }).join("");
+
+  container.innerHTML = `
+    <div class="history-summary" aria-label="History summary">
+      <div class="history-stat"><span class="history-stat-value">${sessionCount}</span><span class="history-stat-label">sessions</span></div>
+      <div class="history-stat"><span class="history-stat-value">${routineDays}</span><span class="history-stat-label">routine days</span></div>
+      <div class="history-stat"><span class="history-stat-value">${esc(lastDate.slice(5).replace("-", "/"))}</span><span class="history-stat-label">most recent</span></div>
+    </div>
+    ${groupedHistory}
+  `;
 }
 
 document.getElementById("downloadHistoryBtn").addEventListener("click", function() {
