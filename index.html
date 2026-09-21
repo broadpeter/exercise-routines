@@ -703,7 +703,7 @@ async function syncFromSupabase() {
   }
   localStorage.setItem("historySyncInitialized", "true");
 
-  renderHome();
+  refreshVisiblePageAfterSync();
   setSyncStatus("Synced");
 }
 
@@ -982,6 +982,14 @@ function renderHome() {
   renderMonthlyCalendar();
 
   showPage("homeView");
+}
+
+function refreshVisiblePageAfterSync() {
+  if (document.getElementById("homeView").style.display !== "none") {
+    renderHome();
+  } else if (document.getElementById("historyPage").style.display !== "none") {
+    renderHistory();
+  }
 }
 
 // --- PAGE NAVIGATION ---
