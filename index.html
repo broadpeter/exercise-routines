@@ -412,6 +412,27 @@ body[class*="theme-"] { --text-muted: #5b5b56; }
   gap: 10px;
 }
 
+.history-entry-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.history-delete-btn {
+  border: 0;
+  padding: 2px 0;
+  background: transparent;
+  color: var(--text-muted);
+  font: inherit;
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.history-delete-btn:hover {
+  color: var(--text);
+  text-decoration: underline;
+}
+
 .history-badge {
   display: inline-flex;
   align-items: center;
@@ -1056,7 +1077,7 @@ document.getElementById("backBtnHistory").addEventListener("click", renderHome);
 // --- HISTORY PAGE ---
 function renderHistory() {
   const container = document.getElementById("history");
-  const history = getHistory();
+  const history = ensureHistoryIds(getHistory());
 
   if (history.length === 0) {
     container.innerHTML = `<div class="history-empty">No completed routines yet.</div>`;
@@ -1100,7 +1121,10 @@ function renderHistory() {
         <article class="history-entry">
           <div class="history-entry-top">
             <span class="history-badge ${esc(symbol)}">${esc(label)}</span>
-            <span class="history-entry-meta">${exercises.length} exercise${exercises.length === 1 ? "" : "s"}</span>
+            <div class="history-entry-actions">
+              <span class="history-entry-meta">${exercises.length} exercise${exercises.length === 1 ? "" : "s"}</span>
+              <button class="history-delete-btn" type="button" onclick="deleteHistoryEntry('${esc(entry.id)}')" aria-label="Delete ${esc(label)} from history">Delete</button>
+            </div>
           </div>
           <ul class="history-exercises">${exerciseMarkup}</ul>
         </article>
@@ -1126,6 +1150,31 @@ function renderHistory() {
     </div>
     ${groupedHistory}
   `;
+}
+
+function deleteHistoryEntry(sessionId) {
+  if (!confirm("Delete this routine from history?")) return;
+
+  const history = ensureHistoryIds(getHistory());
+  const entry = history.find(item => item.id === sessionId);
+  if (!entry) return;
+
+  const remainingHistory = history.filter(item => item.id !== sessionId);
+  localStorage.setItem("history", JSON.stringify(remainingHistory));
+
+  const previousRoutine = remainingHistory.findLast(item => {
+    const symbol = routineSymbol(item.routine);
+    return symbol === "A" || symbol === "B";
+  });
+  if (previousRoutine) {
+    localStorage.setItem("lastRoutine", routineSymbol(previousRoutine.routine));
+  } else {
+    localStorage.removeItem("lastRoutine");
+  }
+
+  renderHistory();
+  renderMonthlyCalendar();
+  if (currentUser) syncNow([entry.id]);
 }
 
 document.getElementById("downloadHistoryBtn").addEventListener("click", function() {
