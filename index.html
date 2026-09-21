@@ -878,8 +878,11 @@ document.getElementById("csvInput").addEventListener("change", function(e) {
 
 // --- DETERMINE NEXT ROUTINE ---
 function getNextRoutine() {
-  const last = localStorage.getItem("lastRoutine");
-  return last === "A" ? "B" : "A";
+  const previousRoutine = getHistory().findLast(entry => {
+    const symbol = routineSymbol(entry.routine);
+    return symbol === "A" || symbol === "B";
+  });
+  return routineSymbol(previousRoutine?.routine) === "A" ? "B" : "A";
 }
 
 // --- CHECK IF DONE TODAY (a daily-only session doesn't count) ---
