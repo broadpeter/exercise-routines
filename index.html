@@ -624,6 +624,30 @@ function ensureHistoryIds(history) {
   return withIds;
 }
 
+function getPendingHistoryIds() {
+  return JSON.parse(localStorage.getItem("pendingHistoryIds") || "[]");
+}
+
+function setPendingHistoryIds(ids) {
+  if (ids.length > 0) {
+    localStorage.setItem("pendingHistoryIds", JSON.stringify(ids));
+  } else {
+    localStorage.removeItem("pendingHistoryIds");
+  }
+}
+
+function getPendingDeletedHistoryIds() {
+  return JSON.parse(localStorage.getItem("pendingDeletedHistoryIds") || "[]");
+}
+
+function setPendingDeletedHistoryIds(ids) {
+  if (ids.length > 0) {
+    localStorage.setItem("pendingDeletedHistoryIds", JSON.stringify(ids));
+  } else {
+    localStorage.removeItem("pendingDeletedHistoryIds");
+  }
+}
+
 async function syncFromSupabase() {
   if (!supabaseClient) return;
   setSyncStatus("Syncing...");
@@ -651,17 +675,33 @@ async function syncFromSupabase() {
   }
 
   const localHistory = ensureHistoryIds(getHistory());
+  const pendingHistoryIds = getPendingHistoryIds();
   if (cloudSessions.length > 0) {
-    localStorage.setItem("history", JSON.stringify(cloudSessions.map(row => ({
+    const cloudHistory = cloudSessions.map(row => ({
       id: row.id,
       date: row.date,
       routine: row.routine,
       version: row.version,
       exercises: row.exercises || []
-    }))));
-  } else if (localHistory.length > 0) {
+    }));
+    const cloudSessionIds = new Set(cloudHistory.map(entry => entry.id));
+    const pendingHistory = localHistory.filter(entry =>
+      pendingHistoryIds.includes(entry.id) && !cloudSessionIds.has(entry.id)
+    );
+    localStorage.setItem("history", JSON.stringify([...cloudHistory, ...pendingHistory]));
+    if (pendingHistory.length > 0) await uploadHistory(pendingHistory);
+    setPendingHistoryIds([]);
+  } else if (pendingHistoryIds.length > 0) {
+    const pendingHistory = localHistory.filter(entry => pendingHistoryIds.includes(entry.id));
+    localStorage.setItem("history", JSON.stringify(pendingHistory));
+    if (pendingHistory.length > 0) await uploadHistory(pendingHistory);
+    setPendingHistoryIds([]);
+  } else if (localHistory.length > 0 && !localStorage.getItem("historySyncInitialized")) {
     await uploadHistory(localHistory);
+  } else {
+    localStorage.setItem("history", "[]");
   }
+  localStorage.setItem("historySyncInitialized", "true");
 
   renderHome();
   setSyncStatus("Synced");
@@ -693,27 +733,18 @@ async function uploadHistory(history) {
   if (error) throw error;
 }
 
-async function pushLocalData() {
-  if (!supabaseClient || !currentUser) return;
-  setSyncStatus("Saving...");
-  const exercises = normaliseExercises(getExercises());
-  const history = ensureHistoryIds(getHistory());
-
-  if (exercises.length > 0) await uploadExercises(exercises);
-  if (history.length > 0) await uploadHistory(history);
-  setSyncStatus("Synced");
-}
-
 async function syncNow(deletedSessionIds = []) {
   try {
-    if (deletedSessionIds.length > 0) {
+    const pendingDeletedIds = getPendingDeletedHistoryIds();
+    const idsToDelete = [...new Set([...pendingDeletedIds, ...deletedSessionIds])];
+    if (idsToDelete.length > 0) {
       const { error } = await supabaseClient
         .from("sessions")
         .delete()
-        .in("id", deletedSessionIds);
+        .in("id", idsToDelete);
       if (error) throw error;
+      setPendingDeletedHistoryIds(pendingDeletedIds.filter(id => !idsToDelete.includes(id)));
     }
-    await pushLocalData();
     await syncFromSupabase();
   } catch (error) {
     console.error("Supabase sync failed:", error);
@@ -1023,6 +1054,10 @@ document.getElementById("markDoneBtn").addEventListener("click", function() {
     const history = ensureHistoryIds(getHistory());
     const removedEntry = history.splice(activeCompletionIndex, 1)[0];
     localStorage.setItem("history", JSON.stringify(history));
+    if (removedEntry?.id) {
+      setPendingHistoryIds(getPendingHistoryIds().filter(id => id !== removedEntry.id));
+      setPendingDeletedHistoryIds([...new Set([...getPendingDeletedHistoryIds(), removedEntry.id])]);
+    }
 
     const previousRoutine = history.findLast(entry => {
       const symbol = routineSymbol(entry.routine);
@@ -1050,14 +1085,17 @@ document.getElementById("markDoneBtn").addEventListener("click", function() {
   }
 
   const history = getHistory();
-  history.push({
+  const newEntry = {
+    id: crypto.randomUUID(),
     date: getLocalDateString(),
     routine: symbol,
     version: version,
     exercises: activeExercises.map(e => e.exercise)
-  });
+  };
+  history.push(newEntry);
 
   localStorage.setItem("history", JSON.stringify(history));
+  setPendingHistoryIds([...getPendingHistoryIds(), newEntry.id]);
 
   renderHome();
   if (currentUser) syncNow();
@@ -1161,6 +1199,8 @@ function deleteHistoryEntry(sessionId) {
 
   const remainingHistory = history.filter(item => item.id !== sessionId);
   localStorage.setItem("history", JSON.stringify(remainingHistory));
+  setPendingHistoryIds(getPendingHistoryIds().filter(id => id !== sessionId));
+  setPendingDeletedHistoryIds([...new Set([...getPendingDeletedHistoryIds(), sessionId])]);
 
   const previousRoutine = remainingHistory.findLast(item => {
     const symbol = routineSymbol(item.routine);
