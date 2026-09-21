@@ -735,6 +735,7 @@ async function uploadHistory(history) {
 
 async function syncNow(deletedSessionIds = []) {
   try {
+    deletedSessionIds = Array.isArray(deletedSessionIds) ? deletedSessionIds : [];
     const pendingDeletedIds = getPendingDeletedHistoryIds();
     const idsToDelete = [...new Set([...pendingDeletedIds, ...deletedSessionIds])];
     if (idsToDelete.length > 0) {
