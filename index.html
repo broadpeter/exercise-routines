@@ -661,7 +661,10 @@ async function syncFromSupabase() {
   if (sessionsError) throw sessionsError;
 
   const localExercises = normaliseExercises(getExercises());
-  if (cloudExercises.length > 0) {
+  if (localStorage.getItem("pendingExerciseImport") === "true") {
+    await uploadExercises(localExercises);
+    localStorage.removeItem("pendingExerciseImport");
+  } else if (cloudExercises.length > 0) {
     const cleanedExercises = normaliseExercises(cloudExercises.map(row => ({
       exercise: row.exercise,
       routine: row.routine,
@@ -868,6 +871,7 @@ document.getElementById("csvInput").addEventListener("change", function(e) {
     } else {
       updateVersionIfChanged(csvText);
       localStorage.setItem("exercises", JSON.stringify(exercises));
+      localStorage.setItem("pendingExerciseImport", "true");
       renderHome();
       if (currentUser) syncNow();
     }
